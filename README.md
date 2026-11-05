@@ -4,7 +4,9 @@ Protótipo de uma plataforma responsiva para apoiar a gestão do projeto social 
 
 ## Abrir
 
-Abra `dist/index.html` no navegador. O projeto não precisa de instalação ou compilação. O formulário de novo aluno funciona no navegador e salva os registros de demonstração no `localStorage` do dispositivo.
+Abra `index.html` na raiz do projeto no navegador. O projeto não precisa de instalação ou compilação. O formulário de novo aluno funciona no navegador e salva os registros de demonstração no `localStorage` do dispositivo.
+
+Os arquivos principais estão na raiz (`index.html`, `styles.css` e `app.js`) para facilitar a edição e o envio ao GitHub. A pasta `dist/` contém uma cópia desses mesmos arquivos usada para a publicação do protótipo.
 
 ## O que o protótipo apresenta
 
