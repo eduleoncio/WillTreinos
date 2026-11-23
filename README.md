@@ -1,22 +1,42 @@
 # Will Treinos
 
-Protótipo de uma plataforma responsiva para apoiar a gestão do projeto social de aulas gratuitas de vôlei Will Treinos, na região do Ouro Verde, em Campinas/SP.
+Protótipo responsivo para apoiar a organização das aulas gratuitas de vôlei do projeto social Will Treinos, no Ouro Verde, em Campinas/SP.
 
-## Abrir
+## Requisitos
 
-Abra `index.html` na raiz do projeto no navegador. O projeto não precisa de instalação ou compilação. O formulário de novo aluno funciona no navegador e salva os registros de demonstração no `localStorage` do dispositivo.
+- Node.js 20.19+ ou 22.12+
+- npm
 
-Os arquivos principais estão na raiz (`index.html`, `styles.css` e `app.js`) para facilitar a edição e o envio ao GitHub. A pasta `dist/` contém uma cópia desses mesmos arquivos usada para a publicação do protótipo.
+## Começar no VS Code
 
-## O que o protótipo apresenta
+Abra a pasta do projeto no VS Code e, no terminal integrado, execute:
 
-- Visão geral com indicadores, frequência, próxima aula e agenda da semana.
-- Lista de alunos com busca, filtro por faixa etária e inclusão local de novos registros.
-- Seções de agenda, presença, campeonatos, avisos e equipe.
-- Layout adaptável para computador e celular.
+```bash
+npm install
+npm run dev
+```
 
-## Limites da demonstração
+O Vite mostrará um endereço local — normalmente `http://localhost:5173`. Abra esse endereço no navegador. Para parar o servidor, pressione `Ctrl+C` no terminal.
 
-Os nomes, contagens, horários, frequência e evento apresentados são conteúdo fictício para demonstrar a interface, não dados operacionais do projeto. O protótipo não possui servidor, cadastro/autenticação por CPF, mensagens em tempo real, notificações enviadas, leitura real de QR Code ou banco de dados compartilhado. Esses itens exigem implementação e validação com a equipe antes de uso com alunos.
+## Comandos
 
-Feito em HTML, CSS e JavaScript sem dependências de build.
+```bash
+npm run dev      # inicia o servidor de desenvolvimento
+npm run build    # gera a versão de produção na pasta dist/
+npm run preview  # abre localmente a versão gerada em dist/
+```
+
+## Estrutura
+
+```text
+index.html       entrada da aplicação
+src/main.js      interações e navegação
+src/style.css    estilos e layout responsivo
+dist/            saída gerada pelo build (não enviar ao Git)
+```
+
+O protótipo usa HTML, CSS, JavaScript e Vite. Não precisa instalar extensões do VS Code. Os novos alunos de demonstração são salvos apenas no `localStorage` do navegador.
+
+## Conteúdo demonstrativo
+
+Os nomes, horários, contagens, frequência e eventos são exemplos para apresentar a interface, não dados reais do projeto. Login por CPF, QR Code, mensagens em tempo real, notificações e banco de dados compartilhado ainda não estão conectados.
