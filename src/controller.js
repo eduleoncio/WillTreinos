@@ -65,7 +65,12 @@ export function initController(app) {
   let events = [...(app.eventCache || []), ...demoEventsFallback];
   let absences = app.absenceCache || [];
   let attendances = JSON.parse(localStorage.getItem('will-demo-attendance') || '[]');
+  let classSessions = [];
+  let classInterestCounts = {};
+  let interestedSessionIds = new Set();
   let notices = [...demoNotices];
+  let noticeMonthFilter = '';
+  let noticeYearFilter = '';
   let messages = JSON.parse(localStorage.getItem('will-treinos-messages') || '[]');
 
   function toastMessage(message) {
@@ -77,6 +82,38 @@ export function initController(app) {
 
   function dateText(value, options = { day: '2-digit', month: 'short', year: 'numeric' }) {
     return new Intl.DateTimeFormat('pt-BR', options).format(new Date(value));
+  }
+
+  function demoClassSessions() {
+    const now = new Date();
+    const nextDay = new Date(now);
+    nextDay.setDate(now.getDate() + 1);
+    nextDay.setHours(18, 0, 0, 0);
+    const laterDay = new Date(now);
+    laterDay.setDate(now.getDate() + 3);
+    laterDay.setHours(18, 0, 0, 0);
+    return [
+      { id: 'demo-current-session', class_name: 'Vôlei · Iniciante', starts_at: new Date(now.getTime() - 30 * 60 * 1000).toISOString(), ends_at: new Date(now.getTime() + 60 * 60 * 1000).toISOString(), location: 'Quadra comunitária · Ouro Verde' },
+      { id: 'demo-next-session', class_name: 'Vôlei · Iniciante', starts_at: nextDay.toISOString(), ends_at: new Date(nextDay.getTime() + 90 * 60 * 1000).toISOString(), location: 'Quadra comunitária · Ouro Verde' },
+      { id: 'demo-later-session', class_name: 'Vôlei · Intermediário', starts_at: laterDay.toISOString(), ends_at: new Date(laterDay.getTime() + 90 * 60 * 1000).toISOString(), location: 'Quadra comunitária · Ouro Verde' },
+    ];
+  }
+
+  function loadDemoInterests() {
+    try { return JSON.parse(localStorage.getItem('will-class-interests') || '{}'); }
+    catch { return {}; }
+  }
+
+  function updateLocalInterest(sessionId, interested) {
+    const allInterests = loadDemoInterests();
+    const participants = new Set(allInterests[sessionId] || []);
+    if (interested) participants.add(user?.id || 'demo-student');
+    else participants.delete(user?.id || 'demo-student');
+    allInterests[sessionId] = [...participants];
+    localStorage.setItem('will-class-interests', JSON.stringify(allInterests));
+    classInterestCounts[sessionId] = participants.size;
+    if (interested) interestedSessionIds.add(sessionId);
+    else interestedSessionIds.delete(sessionId);
   }
 
   function toggleSidebar(open) {
@@ -126,7 +163,22 @@ export function initController(app) {
   function renderStudentHome() {
     const firstName = escapeHtml((user?.full_name || 'Aluno').split(' ')[0]);
     const nextEvent = eventList()[0];
-    return `<div class="page-heading"><div><span class="eyebrow">ÁREA DO ALUNO</span><h1>Olá, ${firstName} 👋</h1><p>Acompanhe suas aulas e participe das atividades do projeto.</p></div></div><section class="student-home-hero"><span class="eyebrow">WILL TREINOS · OURO VERDE</span><h2>Seu espaço para jogar,<br>aprender e crescer junto.</h2><p>As informações da sua turma e da comunidade ficam reunidas aqui.</p></section><section class="stats-grid"><article class="stat-card"><div class="stat-top">Presenças registradas</div><div class="stat-value-row"><strong class="stat-value">${attendances.length || '—'}</strong></div><div class="stat-foot">Confira seu histórico</div></article><article class="stat-card"><div class="stat-top">Próximos campeonatos</div><div class="stat-value-row"><strong class="stat-value">${eventList().length}</strong></div><div class="stat-foot">Atividades abertas à comunidade</div></article></section><section class="section-grid"><article class="panel"><h3 class="panel-title">Sua próxima aula</h3><p class="panel-subtitle">A presença é registrada ao escanear o QR Code exibido pelo professor.</p><div class="attendance-callout">Quando o professor iniciar a chamada, abra a câmera do celular e aponte para o QR Code. Você precisa estar conectado à sua conta.</div><div class="class-actions"><button class="button button-primary" data-action="view" data-target="aluno-presenca">Ver minhas presenças <span>↗</span></button></div></article><article class="panel"><h3 class="panel-title">Próximo campeonato</h3>${nextEvent ? eventCard(nextEvent, true) : '<div class="empty-friendly">Ainda não há campeonatos publicados.</div>'}<button class="panel-link" data-action="view" data-target="aluno-campeonatos">Ver todos →</button></article></section>`;
+    const now = Date.now();
+    const scheduled = classSessions.filter((session) => new Date(session.ends_at || session.starts_at).getTime() >= now)
+      .sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at));
+    const current = scheduled.find((session) => new Date(session.starts_at).getTime() <= now && new Date(session.ends_at).getTime() >= now);
+    const featured = current || scheduled[0];
+    const upcoming = scheduled.filter((session) => session.id !== featured?.id && new Date(session.starts_at).getTime() > now);
+    const sessionName = (session) => session.class_name || session.class?.name || 'Aula de vôlei';
+    const sessionDate = (session) => dateText(session.starts_at, { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' });
+    const featuredCard = featured
+      ? `<article class="student-current-class"><div><span class="eyebrow">${current ? 'AULA ACONTECENDO AGORA' : 'SUA PRÓXIMA AULA'}</span><h2>${escapeHtml(sessionName(featured))}</h2><p>${escapeHtml(sessionDate(featured))} · ${escapeHtml(featured.location || 'Quadra comunitária')}</p></div><button class="button button-primary" data-action="view" data-target="aluno-presenca">Chamada</button></article>`
+      : '<div class="empty-friendly">Nenhuma aula marcada no momento.</div>';
+    const upcomingCards = upcoming.map((session) => {
+      const interested = interestedSessionIds.has(session.id);
+      return `<article class="student-upcoming-class"><div><span class="event-label">${escapeHtml(sessionDate(session))}</span><h3>${escapeHtml(sessionName(session))}</h3><p>${escapeHtml(session.location || 'Quadra comunitária')}</p><small>${classInterestCounts[session.id] || 0} interessado(s) em participar</small></div><button class="button ${interested ? 'button-light' : 'button-primary'}" data-action="class-interest" data-session-id="${escapeHtml(session.id)}">${interested ? 'Vou tentar ir · Cancelar' : 'Tenho interesse'}</button></article>`;
+    }).join('');
+    return `<div class="page-heading"><div><span class="eyebrow">ÁREA DO ALUNO</span><h1>Olá, ${firstName} 👋</h1><p>Acompanhe suas aulas e participe das atividades do projeto.</p></div></div><section class="student-class-section"><h2 class="panel-title">Aula atual</h2>${featuredCard}</section><section class="student-class-section"><div class="panel-head"><div><h2 class="panel-title">Próximas aulas</h2><p class="panel-subtitle">Sinalize seu interesse para a equipe organizar a turma. Isso não confirma presença.</p></div></div><div class="student-card-list">${upcomingCards || '<div class="empty-friendly">Ainda não há outras aulas marcadas.</div>'}</div></section><section class="panel student-events-panel"><div class="panel-head"><div><h2 class="panel-title">Próximo campeonato</h2></div></div>${nextEvent ? eventCard(nextEvent, true) : '<div class="empty-friendly">Ainda não há campeonatos publicados.</div>'}<button class="panel-link" data-action="view" data-target="aluno-campeonatos">Ver todos →</button></section>`;
   }
 
   function renderStudentAttendance() {
@@ -146,8 +198,25 @@ export function initController(app) {
   }
 
   function renderStudentNotices() {
-    const rows = notices.map((item) => `<div class="notice-item"><span class="event-label">${dateText(item.published_at, { day: '2-digit', month: 'long' })}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.body)}</p></div>`).join('');
-    return `<div class="page-heading"><div><span class="eyebrow">PORTAL DO ALUNO</span><h1>Avisos</h1><p>Comunicados importantes da equipe do Will Treinos.</p></div></div><section class="panel">${rows || '<div class="empty-friendly">Nenhum aviso novo.</div>'}</section>`;
+    const sortedNotices = [...notices].sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+    const welcome = sortedNotices.find((item) => item.title?.toLocaleLowerCase('pt-BR').includes('boas-vindas')) || {
+      title: 'Boas-vindas ao Will Treinos',
+      body: 'Este espaço reúne avisos, horários e atividades das aulas.',
+      published_at: new Date().toISOString(),
+    };
+    const announcements = sortedNotices.filter((item) => item !== welcome);
+    const years = [...new Set(announcements.map((item) => new Date(item.published_at).getFullYear()).filter(Number.isFinite))].sort((a, b) => b - a);
+    const monthNames = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date(2026, index, 1)));
+    const filteredNotices = announcements.filter((item) => {
+      const date = new Date(item.published_at);
+      return (!noticeMonthFilter || date.getMonth() + 1 === Number(noticeMonthFilter))
+        && (!noticeYearFilter || date.getFullYear() === Number(noticeYearFilter));
+    });
+    const welcomeCard = `<article class="student-welcome-card"><span class="event-label">${dateText(welcome.published_at, { day: '2-digit', month: 'long' })}</span><h2>${escapeHtml(welcome.title)}</h2><p>${escapeHtml(welcome.body)}</p></article>`;
+    const rows = filteredNotices.map((item) => `<article class="student-notice-card"><span class="event-label">${dateText(item.published_at, { day: '2-digit', month: 'long', year: 'numeric' })}</span><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.body)}</p></article>`).join('');
+    const monthOptions = monthNames.map((name, index) => `<option value="${index + 1}" ${noticeMonthFilter === String(index + 1) ? 'selected' : ''}>${name}</option>`).join('');
+    const yearOptions = years.map((year) => `<option value="${year}" ${noticeYearFilter === String(year) ? 'selected' : ''}>${year}</option>`).join('');
+    return `<div class="page-heading"><div><span class="eyebrow">PORTAL DO ALUNO</span><h1>Avisos</h1><p>Comunicados importantes da equipe do Will Treinos.</p></div></div>${welcomeCard}<section class="student-announcements"><div class="student-announcements-heading"><div><h2 class="panel-title">Avisos da equipe</h2><p class="panel-subtitle">Confira os comunicados publicados para os alunos.</p></div><div class="notice-filters"><label>Mês<select id="notice-month-filter"><option value="">Todos</option>${monthOptions}</select></label><label>Ano<select id="notice-year-filter"><option value="">Todos</option>${yearOptions}</select></label></div></div><div class="student-notice-list">${rows || '<div class="empty-friendly">Nenhum aviso neste período.</div>'}</div></section>`;
   }
 
   function renderStudentProfile() {
@@ -198,22 +267,34 @@ export function initController(app) {
     renderPeopleSearch(data || [], query);
   }
 
-  function renderPersonProfile(profile, classes = [], attendanceCount = 0) {
+  function renderPersonProfile(profile, classes = [], attendance = []) {
     const roleName = profile.role === 'student' ? 'Aluno' : profile.role === 'admin' ? 'Administrador' : 'Equipe';
-    const since = profile.created_at ? dateText(profile.created_at, { day: '2-digit', month: 'long', year: 'numeric' }) : 'Não informado';
+    const since = profile.enrolled_at || profile.created_at ? dateText(profile.enrolled_at || profile.created_at, { day: '2-digit', month: 'long', year: 'numeric' }) : 'Não informado';
+    const absences = attendance.filter((item) => item.status === 'absent').length;
+    const lastParticipation = attendance.filter((item) => item.status !== 'absent').sort((a, b) => new Date(b.created_at || b.checked_in_at) - new Date(a.created_at || a.checked_in_at))[0];
     const classRows = classes.length
       ? classes.map((item) => `<div class="profile-class-row"><span class="profile-class-icon">◫</span><span><strong>${escapeHtml(item.class?.name || 'Turma')}</strong><small>${escapeHtml(item.class?.level || '')}${item.class?.age_group ? ` · ${escapeHtml(item.class.age_group)}` : ''}</small></span><span class="presence-pill">${item.active ? 'Ativa' : 'Inativa'}</span></div>`).join('')
       : '<div class="empty-friendly">Nenhuma turma vinculada.</div>';
     const studentSections = profile.role === 'student'
-      ? `<section class="panel profile-panel"><h2 class="panel-title">Participação nas aulas</h2><div class="profile-stats"><div><strong>${attendanceCount}</strong><span>presenças registradas</span></div><div><strong>${classes.filter((item) => item.active).length}</strong><span>turmas ativas</span></div></div><h3 class="profile-subheading">Turmas</h3>${classRows}</section>`
+      ? `<section class="panel profile-panel"><h2 class="panel-title">Participação nas aulas</h2><div class="profile-stats"><div><strong>${attendance.filter((item) => item.status !== 'absent').length}</strong><span>presenças registradas</span></div><div><strong>${absences}</strong><span>faltas registradas</span></div></div><div class="profile-detail-row"><span>Última participação</span><strong>${lastParticipation ? dateText(lastParticipation.created_at || lastParticipation.checked_in_at) : 'Sem chamada registrada'}</strong></div><h3 class="profile-subheading">Turmas</h3>${classRows}</section>`
       : `<section class="panel profile-panel"><h2 class="panel-title">Acesso ao sistema</h2><div class="profile-detail-row"><span>Tipo de acesso</span><strong>${roleName}</strong></div><div class="profile-detail-row"><span>Situação</span><strong>Conta cadastrada</strong></div></section>`;
-    content.innerHTML = `<div class="page-heading profile-page-heading"><div><span class="eyebrow">PERFIL ${profile.role === 'student' ? 'DO ALUNO' : 'DA EQUIPE'}</span><h1>${escapeHtml(profile.full_name || 'Pessoa cadastrada')}</h1><p>Informações disponíveis no cadastro do Will Treinos.</p></div><button class="button button-light" data-action="back-to-people">← Voltar à busca</button></div><section class="panel profile-hero"><span class="profile-large-avatar">${escapeHtml(initials(profile.full_name || '?'))}</span><div class="profile-hero-copy"><span class="presence-pill ${profile.role === 'student' ? '' : 'profile-staff-pill'}">${roleName}</span><h2>${escapeHtml(profile.full_name || 'Pessoa cadastrada')}</h2><p>${escapeHtml(profile.email || 'E-mail não informado')}</p></div></section><div class="profile-layout"><section class="panel profile-panel"><h2 class="panel-title">Dados do perfil</h2><div class="profile-detail-row"><span>Nome</span><strong>${escapeHtml(profile.full_name || 'Não informado')}</strong></div><div class="profile-detail-row"><span>E-mail</span><strong>${escapeHtml(profile.email || 'Não informado')}</strong></div><div class="profile-detail-row"><span>Perfil</span><strong>${roleName}</strong></div><div class="profile-detail-row"><span>Desde</span><strong>${escapeHtml(since)}</strong></div></section>${studentSections}</div>`;
+    content.innerHTML = `<div class="page-heading profile-page-heading"><div><span class="eyebrow">PERFIL ${profile.role === 'student' ? 'DO ALUNO' : 'DA EQUIPE'}</span><h1>${escapeHtml(profile.full_name || 'Pessoa cadastrada')}</h1><p>Informações disponíveis no cadastro do Will Treinos.</p></div><button class="button button-light" data-action="back-to-people">← Voltar para alunos</button></div><section class="panel profile-hero"><span class="profile-large-avatar">${escapeHtml(initials(profile.full_name || '?'))}</span><div class="profile-hero-copy"><span class="presence-pill ${profile.role === 'student' ? '' : 'profile-staff-pill'}">${roleName}</span><h2>${escapeHtml(profile.full_name || 'Pessoa cadastrada')}</h2><p>${escapeHtml(profile.email || 'E-mail não informado')}</p></div></section><div class="profile-layout"><section class="panel profile-panel"><h2 class="panel-title">Dados do perfil</h2><div class="profile-detail-row"><span>Nome</span><strong>${escapeHtml(profile.full_name || 'Não informado')}</strong></div><div class="profile-detail-row"><span>E-mail</span><strong>${escapeHtml(profile.email || 'Não informado')}</strong></div><div class="profile-detail-row"><span>Telefone</span><strong>${escapeHtml(profile.phone || 'Não informado')}</strong></div><div class="profile-detail-row"><span>Idade</span><strong>${profile.age ? `${escapeHtml(profile.age)} anos` : 'Não informado'}</strong></div><div class="profile-detail-row"><span>Data de matrícula</span><strong>${escapeHtml(since)}</strong></div><div class="profile-detail-row"><span>Último login</span><strong>${profile.last_login_at ? dateText(profile.last_login_at) : 'Não disponível'}</strong></div></section>${studentSections}</div>`;
   }
 
   async function openPersonProfile(profileId) {
     closePeopleSearch();
-    $('#people-search').value = '';
-    if (!supabase || role !== 'staff') return;
+    const peopleSearch = $('#people-search');
+    if (peopleSearch) peopleSearch.value = '';
+    if (role !== 'staff') return;
+    const localStudent = students.find((student) => String(student.id) === String(profileId));
+    if (localStudent && (!supabase || String(profileId).startsWith('demo-'))) {
+      selectedProfile = { id: localStudent.id, email: localStudent.email, full_name: localStudent.name, role: 'student', enrolled_at: localStudent.enrolledAt, phone: localStudent.phone, age: localStudent.age };
+      view = 'perfil-pessoa';
+      render();
+      renderPersonProfile(selectedProfile, [], localStudent.attendance || []);
+      return;
+    }
+    if (!supabase || !profileId) { toastMessage('Não foi possível abrir esse perfil.'); return; }
     const { data: profile, error } = await supabase.from('profiles').select('id,email,full_name,role,created_at').eq('id', profileId).maybeSingle();
     if (error || !profile) { toastMessage('Não foi possível abrir esse perfil.'); return; }
     selectedProfile = profile;
@@ -222,9 +303,9 @@ export function initController(app) {
     if (profile.role !== 'student') return;
     const [enrollmentResult, attendanceResult] = await Promise.all([
       supabase.from('class_enrollments').select('active,class:classes(name,level,age_group)').eq('student_id', profile.id).order('enrolled_at', { ascending: false }),
-      supabase.from('attendance').select('id', { count: 'exact', head: true }).eq('student_id', profile.id),
+      supabase.from('attendance').select('status,created_at').eq('student_id', profile.id),
     ]);
-    if (view === 'perfil-pessoa' && selectedProfile?.id === profile.id) renderPersonProfile(profile, enrollmentResult.data || [], attendanceResult.count || 0);
+    if (view === 'perfil-pessoa' && selectedProfile?.id === profile.id) renderPersonProfile(profile, enrollmentResult.data || [], attendanceResult.data || []);
   }
 
   function render() {
@@ -239,6 +320,7 @@ export function initController(app) {
         $('#breadcrumb-current').textContent = selectedProfile.full_name;
         renderPersonProfile(selectedProfile);
       } else renderStaff(view);
+      if (view === 'agenda') void loadStaffAgendaInterests();
       const activeTotal = $('#active-total');
       if (activeTotal) activeTotal.textContent = students.length;
     }
@@ -264,6 +346,76 @@ export function initController(app) {
     if (!attendanceResult.error) attendances = attendanceResult.data;
     if (!noticeResult.error) notices = noticeResult.data.filter((item) => ['all', 'students'].includes(item.audience));
     render();
+  }
+
+  async function loadStudentSchedule() {
+    if (!supabase || !user?.id) return;
+    let result = await supabase.from('class_sessions')
+      .select('id,class_id,starts_at,ends_at,location,class:classes(name)')
+      .gte('ends_at', new Date().toISOString()).order('starts_at');
+    if (result.error) {
+      result = await supabase.from('classes').select('id,title,starts_at,ends_at,location')
+        .gte('starts_at', new Date().toISOString()).order('starts_at');
+      if (!result.error) result.data = result.data.map((item) => ({ ...item, class_name: item.title }));
+    }
+    if (result.error) return;
+    classSessions = result.data || [];
+    if (!classSessions.length) { render(); return; }
+    const interestResult = await supabase.rpc('get_class_interest_counts', { p_class_ids: classSessions.map((session) => session.id) });
+    if (!interestResult.error) {
+      classInterestCounts = Object.fromEntries(interestResult.data.map((item) => [item.class_id, Number(item.interest_count)]));
+      interestedSessionIds = new Set(interestResult.data.filter((item) => item.interested).map((item) => item.class_id));
+    }
+    if (role === 'student' && view === 'aluno-inicio') render();
+  }
+
+  async function loadStaffAgendaInterests() {
+    if (view !== 'agenda' || role !== 'staff') return;
+    const localSchedule = JSON.parse(localStorage.getItem('will-treinos-sessions') || '[]');
+    if (!supabase) {
+      classSessions = localSchedule.length ? localSchedule : demoClassSessions();
+      const localInterests = loadDemoInterests();
+      classInterestCounts = Object.fromEntries(Object.entries(localInterests).map(([id, participants]) => [id, participants.length]));
+    } else {
+      let result = await supabase.from('class_sessions').select('id,class_id,starts_at,ends_at,location,class:classes(name)').gte('ends_at', new Date().toISOString()).order('starts_at');
+      if (result.error) {
+        result = await supabase.from('classes').select('id,title,starts_at,ends_at,location').gte('starts_at', new Date().toISOString()).order('starts_at');
+        if (!result.error) result.data = result.data.map((item) => ({ ...item, class_name: item.title }));
+      }
+      if (!result.error) classSessions = result.data || [];
+      if (classSessions.length) {
+        const interestResult = await supabase.rpc('get_class_interest_counts', { p_class_ids: classSessions.map((session) => session.id) });
+        if (!interestResult.error) classInterestCounts = Object.fromEntries(interestResult.data.map((item) => [item.class_id, Number(item.interest_count)]));
+      }
+    }
+    renderStaffInterestSummary();
+  }
+
+  function renderStaffInterestSummary() {
+    if (view !== 'agenda' || role !== 'staff') return;
+    $('#class-interest-summary')?.remove();
+    const rows = classSessions.filter((session) => new Date(session.starts_at) > new Date()).map((session) =>
+      `<div class="schedule-item"><div class="schedule-info"><strong>${escapeHtml(session.class_name || session.class?.name || session.title || 'Aula de vôlei')}</strong><span>${dateText(session.starts_at, { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${escapeHtml(session.location || 'Local a definir')}</span></div><span class="schedule-tag">${classInterestCounts[session.id] || 0} interessado(s)</span></div>`).join('');
+    content.insertAdjacentHTML('beforeend', `<section class="panel" id="class-interest-summary"><h2 class="panel-title">Interesse nas próximas aulas</h2><p class="panel-subtitle">Estimativa informada pelos alunos; não confirma presença.</p>${rows || '<div class="empty-friendly">Nenhuma próxima aula cadastrada.</div>'}</section>`);
+  }
+
+  async function toggleClassInterest(sessionId) {
+    const willAttend = !interestedSessionIds.has(sessionId);
+    try {
+      if (supabase) {
+        const request = willAttend
+          ? supabase.from('class_session_interests').upsert({ class_id: sessionId, student_id: user.id }, { onConflict: 'class_id,student_id' })
+          : supabase.from('class_session_interests').delete().eq('class_id', sessionId).eq('student_id', user.id);
+        const { error } = await request;
+        if (error) throw error;
+        await loadStudentSchedule();
+      } else {
+        updateLocalInterest(sessionId, willAttend);
+      }
+      render();
+    } catch (error) {
+      toastMessage(error.message || 'Não foi possível atualizar seu interesse.');
+    }
   }
 
   function openDialog(selector, focus) {
@@ -324,6 +476,10 @@ export function initController(app) {
   function openPortal(nextRole, authUser, profile = null) {
     role = nextRole;
     user = { ...(authUser || {}), ...(profile || {}), full_name: profile?.full_name || authUser?.user_metadata?.full_name || authUser?.full_name || (nextRole === 'student' ? 'Aluno' : 'Willian') };
+    classSessions = supabase ? [] : (JSON.parse(localStorage.getItem('will-treinos-sessions') || '[]').length ? JSON.parse(localStorage.getItem('will-treinos-sessions') || '[]') : demoClassSessions());
+    const savedInterests = loadDemoInterests();
+    classInterestCounts = Object.fromEntries(Object.entries(savedInterests).map(([id, participants]) => [id, participants.length]));
+    interestedSessionIds = new Set(Object.entries(savedInterests).filter(([, participants]) => participants.includes(user.id)).map(([id]) => id));
     setCurrentUser(user);
     view = nextRole === 'student' ? 'aluno-inicio' : 'inicio';
     authScreen.hidden = true;
@@ -339,7 +495,7 @@ export function initController(app) {
     toggleSidebar(false);
     render();
     if (supabase && nextRole === 'staff') void loadStaffStudents();
-    if (supabase && nextRole === 'student') void loadStudentData();
+    if (supabase && nextRole === 'student') { void loadStudentData(); void loadStudentSchedule(); }
     if (nextRole === 'student' && sessionStorage.getItem('will-pending-qr')) setTimeout(() => void checkIn(), 250);
   }
 
@@ -446,7 +602,7 @@ export function initController(app) {
         toastMessage(`Convite enviado para ${email}.`);
         if (invitedRole === 'student') await loadStaffStudents();
       } else if (invitedRole === 'student') {
-        const student = { id: crypto.randomUUID(), name: fullName, email, group: String(values.get('group')), className: String(values.get('class')).replace('Vôlei · ', ''), presence: '—', tone: 'green', initials: initials(fullName) };
+        const student = { id: crypto.randomUUID(), name: fullName, email, phone: String(values.get('contact') || ''), age: values.get('age') ? Number(values.get('age')) : null, enrolledAt: new Date().toISOString(), group: String(values.get('group')), className: String(values.get('class')).replace('Vôlei · ', ''), presence: '—', tone: 'green', initials: initials(fullName) };
         students.unshift(student); addedStudents.unshift(student); demoInvites.unshift({ fullName, email, role: 'student' });
         localStorage.setItem('will-treinos-students', JSON.stringify(addedStudents));
         localStorage.setItem('will-treinos-invites', JSON.stringify(demoInvites));
@@ -633,6 +789,8 @@ export function initController(app) {
   document.addEventListener('click', async (event) => {
     const personResult = event.target.closest('[data-person-profile]');
     if (personResult) { await openPersonProfile(personResult.dataset.personProfile); return; }
+    const studentRow = event.target.closest('[data-student-profile]');
+    if (studentRow) { await openPersonProfile(studentRow.dataset.studentProfile); return; }
     if (!event.target.closest('#people-search-wrap')) closePeopleSearch();
     const nav = event.target.closest('[data-view]');
     if (nav) { navigateTo(nav.dataset.view); return; }
@@ -648,7 +806,8 @@ export function initController(app) {
     else if (type === 'register-event') await registerForEvent(action.dataset.eventId);
     else if (type === 'logout') await signOut();
     else if (type === 'view') navigateTo(action.dataset.target);
-    else if (type === 'back-to-people') { view = 'inicio'; render(); }
+    else if (type === 'class-interest') await toggleClassInterest(action.dataset.sessionId);
+    else if (type === 'back-to-people') { view = 'alunos'; render(); }
     else if (type === 'export') exportStudents();
     else if (type === 'new-class') openComposer('class');
     else if (type === 'new-event') openComposer('event');
@@ -659,6 +818,11 @@ export function initController(app) {
 
   document.addEventListener('input', (event) => { if (event.target.id === 'student-search') renderStaff('alunos', event.target.value); });
   document.addEventListener('change', (event) => {
+    if (event.target.id === 'notice-month-filter' || event.target.id === 'notice-year-filter') {
+      noticeMonthFilter = $('#notice-month-filter')?.value || '';
+      noticeYearFilter = $('#notice-year-filter')?.value || '';
+      render();
+    }
     if (event.target.id === 'group-filter') {
       const filter = event.target.value;
       document.querySelectorAll('#student-table tr').forEach((row) => { row.hidden = Boolean(filter) && !row.cells[1]?.textContent.includes(filter); });
@@ -672,6 +836,12 @@ export function initController(app) {
     if (backdrop && event.target === backdrop) closeDialog(`#${backdrop.id}`);
   });
   document.addEventListener('keydown', (event) => {
+    const studentRow = event.target.closest?.('tr[data-student-profile]');
+    if (studentRow && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      void openPersonProfile(studentRow.dataset.studentProfile);
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && role === 'staff' && !$('#people-search-wrap').hidden) {
       event.preventDefault();$('#people-search').focus();
     }
